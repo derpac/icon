@@ -56,28 +56,3 @@
 
 # print(sympystr)
 # print(latexstr)
-
-# based on sympy method
-import sympy as sp
-from sympy.parsing.latex import parse_latex
-
-def parse_input_latex(latex_str):
-
-    cleaned_str = latex_str.replace(r'\\', r' \\').replace(r'\ddot', r' \ddot').replace(r'\dot', r' \dot')
-    raw_expr = parse_latex(cleaned_str)
-    t = sp.Symbol('t')
-    x = sp.Function('x')(t)
-
-    replacements = {}
-    for sym in raw_expr.free_symbols:
-        if 'ddot{x}' in sym.name:
-            replacements[sym] = sp.Derivative(x, (t,2))
-        elif 'dot{x}' in sym.name:
-            replacements[sym] = sp.Derivative(x, t)
-        elif sym.name == 'x':
-            replacements[sym] = x
-    return t,x,raw_expr.subs(replacements)
-
-latex_in = r"2\ddot{x} + 5\dot{x} + 3x"
-t,x,ode = parse_input_latex(latex_in)
-sp.pprint(ode)
