@@ -1,4 +1,4 @@
-from sympy import *
+from sympy import solve, Derivative, collect, expand, diff
 import sympy as sp
 from sympy.solvers import solve
 
@@ -42,15 +42,16 @@ def symdiff2genform(exfunc):
         ans = solve(exfunc,(Derivative(x(t), t)))
     # this solves for the highest derivative 
     #print(ans) # debug
+    
+    xn_expanded = expand(ans[0])
 
-    eq = sp.Eq(ans, v)
+    eq = sp.Eq(ans[0], v)
     u_iso = sp.solve(eq, u)[0]
 
-    oneob = u_iso.coeff(v)
-    b = 1/oneob
-    mfob = u_iso.subs(v,0)
-    f = -mfob * b
+    b_expr = sp.diff(xn_expanded, u)   # coefficient of u (b(x))
+    f_expr = xn_expanded.subs(u, 0)    # f(x)
 
-    return ans,f,b
+
+    return ans[0],f_expr,b_expr, n 
 
 # this provides the inputted equation in the form x^n = f(x) + b(x)u
