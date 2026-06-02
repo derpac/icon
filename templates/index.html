@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script
+    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+    async>
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='icon.css') }}">
+    <title>icon</title>
+</head>
+<body>
+    <!-- sidebar with inputs -->
+    <!-- enter eq -->
+<div class="container">
+    <div class="sidebar">
+        <div class="incard">
+            <h2>enter system equation (=0)</h2>
+            <label>LaTeX differntial form</label>
+            <input type="text" id="eq_input"
+                    value="m*\ddot{x} + c*\dot{x} + k*x - u"
+                    placeholder="LaTeX equation...">
+            <button id="btn_parse">initialise system</button>
+            <div class="status" id="parse_status"></div>
+        </div>
+        
+        <!-- enter params -->
+        <div class="incard" id="card_params" style="display: none;">
+            <h2>enter parameter values</h2>
+            <div id="param_inputs"></div>
+            <button id="btn_build">build controller</button>
+            <div class="status" id="build_status"></div>
+        </div> 
+
+        <!-- controller setup -->
+        <div class="incard" id="card_ctrl" style="display: none;">
+            <h2>controller setup</h2>
+            <label>control type</label>
+            <select id="ctrl_type">
+                <option value="fbl">feedback linearisation</option>
+                <option value="smc">sliding mode control</option>
+            </select>
+            <label>desired trajectory</label>
+            <select id="traj_type">
+                <option value="step">step (Heaviside)</option>
+                <option value="sine">sine wave</option>
+            </select>
+        </div>
+
+        <!-- gains -->
+
+        <div class="incard" id="card_gains" style="display: none;">
+            <h2>gain tuning</h2>
+            <div id="fbl_gains">
+                <div class="slider-row">
+                    <label>k<sub>p</sub></label>
+                    <input type="range" id="kp" min="0.1" max="50" step="0.1" value="10">
+                    <span class="val" id="kp_val">10</span>
+                </div>
+                <div class="slider-row">
+                    <label>k<sub>d</sub></label>
+                    <input type="range" id="kd" min="0.1" max="30" step="0.1" value="5">
+                    <span class="val" id="kd_val">5</span>
+                </div>
+            </div>
+            <div id="smc_gains" style="display:none">
+                <div class="slider-row">
+                    <label>λ</label>
+                    <input type="range" id="lam" min="0.1" max="20" step="0.1" value="2">
+                    <span class="val" id="lam_val">2</span>
+                </div>
+                <div class="slider-row">
+                    <label>k<sub>robust</sub></label>
+                    <input type="range" id="k_robust" min="0.1" max="20" step="0.1" value="3">
+                    <span class="val" id="kr_val">3</span>
+                </div>
+            </div>
+            <button id="btn_simulate">simulate</button>
+            <div class="status" id="sim_status"></div>
+        </div>
+    </div>
+
+    <!-- main content (graphs) -->
+    <div class="main">
+        <div class="info_bar" id="info_bar">
+            initialise system to begin...
+        </div>
+        <div class="charts">
+            <div class="chart-box">
+                <h3>response x(t) vs x<sub>d</sub>(t)</h3>
+                <canvas id="chart_response"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>tracking error e(t)</h3>
+                <canvas id="chart_error"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>control input u(t)</h3>
+                <canvas id="chart_u"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>phase plane x vs dx</h3>
+                <canvas id="chart_phase"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+window.MathJax = {   // for rendering the latex
+    tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+    }
+};
+const socket = io();
+let charts = {};
+
+// functions to make charts with addon and generate status msg
+function mkChart(id, label, datasets, xLabel='t (s)', scatter=false) {
+  const ctx = document.getElementById(id).getContext('2d');
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(ctx, {
+    type: scatter ? 'scatter' : 'line',
+    data: { datasets },
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: { legend: { labels: { color: '#585858', font: { size: 11 } } } },
+      scales: {
+        x: { type: 'linear',
+             ticks: { color: '#b8b8b8' }, grid: { color: '#b8b8b8' },
+             title: { display: true, text: xLabel, color: '#b8b8b8' } },
+        y: { ticks: { color: '#b8b8b8' }, grid: { color: '#b8b8b8' } }
+      }
+    }
+  });
+}
+
+function status(id, msg, isErr=false) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status' + (isErr ? ' error-msg' : '');
+}
+
+// live slider labels
+['kp','kd','lam','k_robust'].forEach(id => {
+  const slider = document.getElementById(id);
+  const label  = document.getElementById(id === 'k_robust' ? 'kr_val' : id+'_val');
+  if (slider && label) slider.oninput = () => { label.textContent = slider.value; };
+});
+
+// toggle control type dropdowns
+document.getElementById('ctrl_type').onchange = function() {
+  document.getElementById('fbl_gains').style.display = this.value === 'fbl' ? '' : 'none';
+  document.getElementById('smc_gains').style.display = this.value === 'smc' ? '' : 'none';
+};
+
+// generate system init
+document.getElementById('btn_parse').onclick = () => {
+  status('parse_status', 'initialising system...');
+  socket.emit('parse_equation', { equation: document.getElementById('eq_input').value });
+};
+
+socket.on('parse_result', data => {
+  const eqLatex =
+    document.getElementById('eq_input').value.replaceAll('*', '');
+  if (data.error) { status('parse_status', data.error, true); return; }
+  const infoBar = document.getElementById('info_bar');
+  status('parse_status', `order-${data.n} system  |  f = ${data.f}  |  b = ${data.b}`);
+  document.getElementById('info_bar').innerHTML =
+    ` <div class="info-left">
+        $$${eqLatex}=0$$
+    </div>
+
+    <div class="info-right">
+        system order: <span>${data.n}</span>
+        &nbsp;|&nbsp;
+        f(x) = <span>${data.f}</span>
+        &nbsp;|&nbsp;
+        b(x) = <span>${data.b}</span>
+    </div>`
+  MathJax.typesetClear([infoBar]);
+  MathJax.typesetPromise([infoBar]);
+
+// show parameter input fields
+  const container = document.getElementById('param_inputs');
+  container.innerHTML = '';
+  data.free_params.forEach(p => {
+    const defaults = { m:'1', c:'0.5', k:'2', lam:'1' };
+    container.innerHTML +=
+      `<label>${p}</label>
+       <input type="text" id="param_${p}" value="${defaults[p] || '1'}"
+              placeholder="numeric value">`;
+  });
+  document.getElementById('card_params').style.display =
+    data.free_params.length ? '' : 'none';
+  document.getElementById('card_ctrl').style.display  = '';
+  document.getElementById('card_gains').style.display = '';
+});
+
+// build controller
+document.getElementById('btn_build').onclick = () => {
+  const params = {};
+  document.querySelectorAll('#param_inputs input').forEach(inp => {
+    const name = inp.id.replace('param_', '');
+    params[name] = parseFloat(inp.value);
+  });
+  status('build_status', 'building controller...');
+  socket.emit('build_controller', {
+    params,
+    control_type: document.getElementById('ctrl_type').value,
+    trajectory_type: document.getElementById('traj_type').value
+  });
+};
+
+socket.on('build_result', data => {
+  if (data.error) { status('build_status', data.error, true); return; }
+  status('build_status', 'controller ready — adjust gains and simulate');
+});
+
+// simulate 
+document.getElementById('btn_simulate').onclick = () => {
+  const ctrlType = document.getElementById('ctrl_type').value;
+  const gains = ctrlType === 'fbl'
+    ? { kp: +document.getElementById('kp').value,
+        kd: +document.getElementById('kd').value }
+    : { lam:      +document.getElementById('lam').value,
+        k_robust: +document.getElementById('k_robust').value };
+
+  status('sim_status', 'simulating control response...');
+  socket.emit('simulate', {
+    gains,
+    control_type: ctrlType,
+    trajectory_type: document.getElementById('traj_type').value
+  });
+};
+
+socket.on('sim_result', data => {
+  if (data.error) { status('sim_status', data.error, true); return; }
+  status('sim_status', `done — ${data.t.length} samples over ${data.t.at(-1).toFixed(1)} s`);
+
+  const thin = (arr, step=2) => arr.filter((_,i) => i % step === 0);
+  const t = thin(data.t), x = thin(data.x), xd = thin(data.xd),
+        e = thin(data.tracking_error), u = thin(data.u), dx = thin(data.dx);
+
+  mkChart('chart_response', 'response',
+    [ { label: 'x(t)',  data: t.map((v, i) => ({ x: v, y: x[i] })),  borderColor:'#dc9656', pointRadius:0, borderWidth:1.5 },
+      { label: 'xd(t)', data: t.map((v, i) => ({ x: v, y: xd[i] })), borderColor:'#a1b56c', pointRadius:0, borderWidth:1.5, borderDash:[5,3] } ]);
+
+  mkChart('chart_error', 'error',
+    [ { label: 'e(t)', data: t.map((v, i) => ({ x: v, y: e[i] })), borderColor:'#ab4642', pointRadius:0, borderWidth:1.5 } ]);
+
+  mkChart('chart_u', 'control Input',
+    [ { label: 'u(t)', data: t.map((v, i) => ({ x: v, y: u[i] })), borderColor:'#a16946', pointRadius:0, borderWidth:1.5 } ]);
+
+  mkChart('chart_phase', 'phase portrait',
+    [ { label: 'x vs ẋ', data: x.map((v,i)=>({x:v,y:dx[i]})),
+        borderColor:'#86c1b9', pointRadius:1, showLine:true, borderWidth:1 } ],
+    'x', false);
+});
+
+socket.on('error_msg', data => {
+  ['parse_status','build_status','sim_status'].forEach(id => status(id, ''));
+  status('sim_status', data.message, true);
+});
+</script>
+
+
+</body>
+</html>

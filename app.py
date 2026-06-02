@@ -60,10 +60,10 @@ def handle_build(data):
     # emits build_result: true | e
 
     try:
-        simulate_fn = genform2controller(
+        simulate_fn, _ = genform2controller(
             session_state['f_expr'],
             session_state['b_expr'],
-            session_state['n']
+            session_state['n'],
             data['control_type'],
             data['trajectory_type'],
             data['params'],
@@ -104,4 +104,4 @@ def handle_simulate(data):
 
 if __name__ == '__main__':
     print('http://localhost:5000')
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
