@@ -8,7 +8,7 @@
   
 2. System initialisation
    -  The app will generate the list of user defined algebraic parameters and ask for values
-   -  It will present the user for options for:
+   -  It will present the user with options for:
       -  Control stragetgy:
          -  Feedback linearisation
          -  Robust Sliding Mode Control (SMC)
@@ -27,11 +27,11 @@
    
 
 Requirements:
-    - Flask
-    - flask_socketio
-    - latex2sympy2
-    - sympy
-    - numpy
-    - scipy
+- Flask
+- flask_socketio
+- latex2sympy2
+- sympy
+- numpy
+- scipy
 
   
