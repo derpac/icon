@@ -9,7 +9,7 @@
 2. System initialisation
    -  The app will generate the list of user defined algebraic parameters and ask for values
    -  It will present the user with options for:
-      -  Control stragetgy:
+      -  Control strategy:
          -  Feedback linearisation
          -  Robust Sliding Mode Control (SMC)
       - Desired state trajectory:
